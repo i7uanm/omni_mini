@@ -1,134 +1,141 @@
-
 # Mini-Omni
+本仓库基于 Mini-Omni 推理框架，构建一个面向多模态端到端语音的最小可用推理系统。目标是实现本地语音输入到语音输出的闭环，并逐步扩展图像和其他模态。
 
-<p align="center"><strong style="font-size: 18px;">
-Mini-Omni: Language Models Can Hear, Talk While Thinking in Streaming
-</strong>
-</p>
+本项目并非官方仓库的完整复刻，而是基于个人任务需求而整理的精简版本。
 
-<p align="center">
-🤗 <a href="https://huggingface.co/gpt-omni/mini-omni">Hugging Face</a>   | 📖 <a href="https://github.com/gpt-omni/mini-omni">Github</a> 
-|     📑 <a href="https://arxiv.org/abs/2408.16725">Technical report</a> |
-🤗 <a href="https://huggingface.co/datasets/gpt-omni/VoiceAssistant-400K">Datasets</a>
-</p>
+---
 
-Mini-Omni is an open-source multimodal large language model that can **hear, talk while thinking**. Featuring real-time end-to-end speech input and **streaming audio output** conversational capabilities.
+## 一、项目内容概述
 
-<p align="center">
-    <img src="data/figures/frameworkv3.jpg" width="100%"/>
-</p>
+本仓库包含如下核心能力：
 
+1. 基于官方推理脚本裁剪与封装的最小推理引擎 OmniEngine  
+2. 支持本地音频输入  
+3. 支持完整音频输出生成（非流式）  
+4. 可用于命令行脚本、Streamlit、Gradio 等多种上层应用  
+5. 与官方 inference.py 完全兼容
 
-## Updates
+---
 
-- **2024.10:** We released [Mini-Omni2](https://github.com/gpt-omni/mini-omni2) with vision and audio capabilities. 
-- **2024.09:** Amazing online [interactive gradio demo](https://huggingface.co/spaces/gradio/omni-mini) by 🤗 gradio team.
-- **2024.09:** **VoiceAssistant-400K** is uploaded to [Hugging Face](https://huggingface.co/datasets/gpt-omni/VoiceAssistant-400K).
+## 二、代码结构
 
-## Features
+```
+mini-omni/
+├── inference.py
+├── omni_engine.py
+├── test_omni_engine.py
+├── webui/
+├── utils/
+├── data/
+└── checkpoint/ (首次运行会自动下载)
+```
 
-✅ **Real-time speech-to-speech** conversational capabilities. No extra ASR or TTS models required.
+其中 omni_engine.py 为自定义推理引擎核心文件。
 
-✅ **Talking while thinking**, with the ability to generate text and audio at the same time.
+---
 
-✅ **Streaming audio output** capabilities.
+## 三、OmniEngine 简介
 
-✅ With "Audio-to-Text" and "Audio-to-Audio" **batch inference** to further boost the performance.
+OmniEngine 对官方 OmniInference 进行包装，提供一个更清晰的接口用于开发和测试。
 
-## Demo
+核心功能包括:
 
-NOTE: need to unmute first.
+1. generate(audio_path):  
+   输入一段音频文件，输出完整回答音频的 PCM 字节数据。
 
-https://github.com/user-attachments/assets/03bdde05-9514-4748-b527-003bea57f118
+2. 支持返回 numpy 格式音频，方便进一步处理。
 
+3. 底层依赖官方 run_AT_batch_stream，实现原生的 Snac 解码音频输出。
 
-## Install
+该类为本项目最重要的基础模块，后续所有前端、API、WebSocket 等均会基于其实现。
 
-Create a new conda environment and install the required packages:
+---
+
+## 四、OmniEngine 源码
+
+文件路径: omni_engine.py
+
+```python
+from omni_engine import OmniEngine
+import wave
+import numpy as np
+```
+
+源码位置参考仓库文件 omni_engine.py。
+
+---
+
+## 五、最小运行样例
+
+文件: test_omni_engine.py
+
+运行方式:
+
+```sh
+conda activate omni
+python test_omni_engine.py
+```
+
+示例会:
+
+1. 加载模型
+2. 读取 `data/samples/output1.wav`
+3. 使用 OmniEngine 生成回答音频
+4. 将回答保存为 `response.wav`
+
+---
+
+## 六、开发任务与里程碑
+
+以下为当前项目的阶段任务规划。
+
+### 1. 第一阶段目标（截至 12 月 4 日）
+
+目标准确性要求为完成 Mini-Omni 最小推理闭环。
+
+具体任务包括：
+
+- **编写 OmniEngine 类**  
+  已完成: OmniEngine 已实现基本推理与音频合成
+
+- **支持本地音频输入并产生完整输出音频**  
+  已完成: 可复现音频输入到音频输出
+
+- **能够生成一个可播放的 wav 文件**  
+  已完成: test_omni_engine.py 已验证
+
+- **能够从 run_AT_batch_stream 中获取音频流并合并**  
+  已完成: generate 方法已封装
+
+- **编写简单测试脚本**  
+  已完成
+
+当前进度: 第一阶段已完成 OmniEngine 的实现，并验证推理功能正常工作。
+
+---
+
+## 七、后续工作计划
+
+1. 扩展 generate_multimodal 接口，加入图像特征
+2. 对接前端 WebSocket 实现流式音频输出
+3. 完善错误处理、异常输出与日志
+4. 构建统一的 API 服务层
+5. 完整撰写阶段报告文档
+
+---
+
+## 八、环境安装
 
 ```sh
 conda create -n omni python=3.10
 conda activate omni
-
-git clone https://github.com/gpt-omni/mini-omni.git
-cd mini-omni
 pip install -r requirements.txt
 ```
 
-## Quick start
+模型会在首次运行 inference 或 OmniEngine 时自动下载。
 
-**Interactive demo**
+---
 
-- start server
+## 九、免责声明
 
-NOTE: you need to start the server before running the streamlit or gradio demo with API_URL set to the server address.
-
-```sh
-sudo apt-get install ffmpeg
-conda activate omni
-cd mini-omni
-python3 server.py --ip '0.0.0.0' --port 60808
-```
-
-
-- run streamlit demo
-
-NOTE: you need to run streamlit **locally** with PyAudio installed. For error: `ModuleNotFoundError: No module named 'utils.vad'`, please run `export PYTHONPATH=./` first.
-
-```sh
-pip install PyAudio==0.2.14
-API_URL=http://0.0.0.0:60808/chat streamlit run webui/omni_streamlit.py
-```
-
-- run gradio demo
-```sh
-API_URL=http://0.0.0.0:60808/chat python3 webui/omni_gradio.py
-```
-
-example:
-
-NOTE: need to unmute first. Gradio seems can not play audio stream instantly, so the latency feels a bit longer.
-
-https://github.com/user-attachments/assets/29187680-4c42-47ff-b352-f0ea333496d9
-
-
-**Local test**
-
-```sh
-conda activate omni
-cd mini-omni
-# test run the preset audio samples and questions
-python inference.py
-```
-
-## FAQ
-
-**1. Does the model support other languages?**
-
-No, the model is only trained on English. However, as we use whisper as the audio encoder, the model can understand other languages which is supported by whisper (like chinese), but the output is only in English.
-
-**2. What is `post_adapter` in the code? does the open-source version support tts-adapter?**
-
-The `post_adapter` is `tts-adapter` in the model.py, but the open-source version does not support `tts-adapter`.
-
-**3. Error: `ModuleNotFoundError: No module named 'utils.xxxx'`**
-
-Run `export PYTHONPATH=./` first. No need to run `pip install utils`, or just try: `pip uninstall utils`
-
-**4. Error: can not run streamlit in local browser, with remote streamlit server**, issue: https://github.com/gpt-omni/mini-omni/issues/37
-    
-You need start streamlit **locally** with PyAudio installed.
-
-
-## Acknowledgements 
-
-- [Qwen2](https://github.com/QwenLM/Qwen2/) as the LLM backbone.
-- [litGPT](https://github.com/Lightning-AI/litgpt/) for training and inference.
-- [whisper](https://github.com/openai/whisper/)  for audio encoding.
-- [snac](https://github.com/hubertsiuzdak/snac/)  for audio decoding.
-- [CosyVoice](https://github.com/FunAudioLLM/CosyVoice) for generating synthetic speech.
-- [OpenOrca](https://huggingface.co/datasets/Open-Orca/OpenOrca) and [MOSS](https://github.com/OpenMOSS/MOSS/tree/main) for alignment.
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=gpt-omni/mini-omni&type=Date)](https://star-history.com/#gpt-omni/mini-omni&Date)
+本项目为个人学习与研究目的构建，与官方项目无直接关联。严禁将本仓库用于任何商业用途或违反相关法律法规的场景。
