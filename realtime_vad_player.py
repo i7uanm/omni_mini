@@ -8,6 +8,7 @@ import numpy as np
 import soundfile as sf
 import torch
 import pyaudio
+import cv2
 
 from omni_engine import OmniEngine
 
@@ -127,11 +128,41 @@ class VADMicLoop:
         self.player = AudioPlayer(sample_rate=ENGINE_SR)
         self.player.start()
 
+        # 视觉
+        self.cap = cv2.VideoCapture(0)
+        if not self.cap.isOpened():
+            print("Warning: Could not open camera.")
+        self.current_frame = None
+        self.visual_thread = threading.Thread(target=self._visual_loop, daemon=True)
+        self.visual_thread.start()
+
         # 缓冲区
         self._buffer_frames: List[bytes] = []
         self._running = False
         self.is_playing = False
         self.interrupt_event = threading.Event()
+        self.last_was_speech = False
+        self.current_image_path = None
+
+    def _visual_loop(self):
+        """视觉线程：每秒更新 current_frame。"""
+        while self._running or not self._running:  # 运行直到程序结束
+            ret, frame = self.cap.read()
+            if ret:
+                self.current_frame = frame
+            time.sleep(1)  # 每秒更新
+
+    def _capture_image(self):
+        """抓取当前帧，resize 并保存为临时文件。"""
+        if self.current_frame is None:
+            return None
+        # Resize 到 224x224 (假设模型需要)
+        resized = cv2.resize(self.current_frame, (224, 224))
+        # 保存为临时文件
+        os.makedirs("tmp_images", exist_ok=True)
+        path = os.path.join("tmp_images", f"frame_{int(time.time())}.jpg")
+        cv2.imwrite(path, resized)
+        return path
 
     def _buffer_to_wav_file(self, path: str):
         """把当前缓冲的麦克风数据写成一个 16kHz 单声道 wav 文件。"""
@@ -189,8 +220,8 @@ class VADMicLoop:
         主循环：
         - 从麦克风不断读 chunk，写入缓冲；
         - 每次更新 buffer 后用 VAD 检测是否说话结束；
-        - 若结束：写 wav -> 调 OmniEngine -> 播放流式回复。
         - 支持打断：如果在播放时检测到新语音，停止播放。
+        - 支持视觉：检测说话开始时抓取图像。
         """
         print("开始实时 VAD 监听，按 Ctrl+C 退出。")
         self._running = True
@@ -207,6 +238,13 @@ class VADMicLoop:
                     # 少于 0.5 秒，不做 VAD 判断
                     continue
 
+                # 检测说话开始
+                has_speech = self._detect_new_speech(audio_np)
+                if has_speech and not self.last_was_speech:
+                    print("[VAD] 检测到说话开始，抓取图像...")
+                    self.current_image_path = self._capture_image()
+                    self.last_was_speech = True
+
                 # 检查打断：如果正在播放且检测到新语音，打断
                 if self.is_playing and self._detect_new_speech(audio_np):
                     print("[Interrupt] 检测到用户新语音，打断当前播放。")
@@ -215,6 +253,7 @@ class VADMicLoop:
                     self.is_playing = False
                     # 清空缓冲区，准备新输入
                     self._buffer_frames.clear()
+                    self.last_was_speech = False  # 重置
                     continue
 
                 if self._detect_utterance_end(audio_np):
@@ -225,6 +264,7 @@ class VADMicLoop:
                     ok = self._buffer_to_wav_file(tmp_path)
                     # 清空缓冲区，为下一句做准备
                     self._buffer_frames.clear()
+                    self.last_was_speech = False
 
                     if not ok:
                         print("[VAD] 缓冲为空，跳过。")
@@ -234,7 +274,7 @@ class VADMicLoop:
                     self.interrupt_event.clear()
                     self.is_playing = True
                     # 调用流式引擎，并把 chunk 扔给播放器
-                    for i, chunk in enumerate(self.engine.generate_stream(tmp_path, stream_stride=5), start=1):
+                    for i, chunk in enumerate(self.engine.generate_stream(tmp_path, image_path=self.current_image_path, stream_stride=5), start=1):
                         if self.interrupt_event.is_set():
                             print("[Interrupt] 生成被打断。")
                             break
@@ -242,6 +282,7 @@ class VADMicLoop:
                         self.player.play_chunk(chunk)
 
                     self.is_playing = False
+                    self.current_image_path = None  # 重置
                     if not self.interrupt_event.is_set():
                         print("[Engine] 一句回复播放完毕，等待下一句语音输入。")
 
@@ -253,6 +294,8 @@ class VADMicLoop:
             self._mic_stream.close()
             self._pa.terminate()
             self.player.stop()
+            if self.cap.isOpened():
+                self.cap.release()
 
 
 def main():
