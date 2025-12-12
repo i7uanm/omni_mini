@@ -101,6 +101,7 @@ class VADMicLoop:
     - 当检测到一句话结束时，把缓冲区里的音频写成临时 wav 文件；
     - 调用 OmniEngine.generate_stream，流式获得回复音频；
     - 把回复音频交给 AudioPlayer 播放。
+    - 支持打断：如果在播放时检测到用户新语音，停止播放并清空队列。
     """
 
     def __init__(self, engine: OmniEngine, device: str = "cpu"):
@@ -129,6 +130,8 @@ class VADMicLoop:
         # 缓冲区
         self._buffer_frames: List[bytes] = []
         self._running = False
+        self.is_playing = False
+        self.interrupt_event = threading.Event()
 
     def _buffer_to_wav_file(self, path: str):
         """把当前缓冲的麦克风数据写成一个 16kHz 单声道 wav 文件。"""
@@ -167,12 +170,27 @@ class VADMicLoop:
         # 尾部静音超过阈值，认为一句话结束
         return silence >= SILENCE_SAMPLES
 
+    def _detect_new_speech(self, audio_np: np.ndarray) -> bool:
+        """
+        检测缓冲区中是否有任何语音段，用于打断机制。
+        如果有语音段，认为用户又开始说话。
+        """
+        with torch.no_grad():
+            tensor = torch.from_numpy(audio_np).to(self.device)
+            timestamps = self.get_speech_timestamps(
+                tensor,
+                self.vad_model,
+                sampling_rate=MIC_RATE,
+            )
+        return len(timestamps) > 0
+
     def loop(self):
         """
         主循环：
         - 从麦克风不断读 chunk，写入缓冲；
         - 每次更新 buffer 后用 VAD 检测是否说话结束；
         - 若结束：写 wav -> 调 OmniEngine -> 播放流式回复。
+        - 支持打断：如果在播放时检测到新语音，停止播放。
         """
         print("开始实时 VAD 监听，按 Ctrl+C 退出。")
         self._running = True
@@ -189,6 +207,16 @@ class VADMicLoop:
                     # 少于 0.5 秒，不做 VAD 判断
                     continue
 
+                # 检查打断：如果正在播放且检测到新语音，打断
+                if self.is_playing and self._detect_new_speech(audio_np):
+                    print("[Interrupt] 检测到用户新语音，打断当前播放。")
+                    self.interrupt_event.set()
+                    self.player.clear()
+                    self.is_playing = False
+                    # 清空缓冲区，准备新输入
+                    self._buffer_frames.clear()
+                    continue
+
                 if self._detect_utterance_end(audio_np):
                     print("[VAD] 检测到一句话结束，开始调用 OmniEngine...")
                     # 把缓冲区写成临时 wav 文件
@@ -202,12 +230,20 @@ class VADMicLoop:
                         print("[VAD] 缓冲为空，跳过。")
                         continue
 
+                    # 清除打断事件，开始生成
+                    self.interrupt_event.clear()
+                    self.is_playing = True
                     # 调用流式引擎，并把 chunk 扔给播放器
                     for i, chunk in enumerate(self.engine.generate_stream(tmp_path, stream_stride=5), start=1):
+                        if self.interrupt_event.is_set():
+                            print("[Interrupt] 生成被打断。")
+                            break
                         print(f"[Engine] Chunk {i} received, len={len(chunk)}")
                         self.player.play_chunk(chunk)
 
-                    print("[Engine] 一句回复播放完毕，等待下一句语音输入。")
+                    self.is_playing = False
+                    if not self.interrupt_event.is_set():
+                        print("[Engine] 一句回复播放完毕，等待下一句语音输入。")
 
         except KeyboardInterrupt:
             print("收到 Ctrl+C，退出实时循环。")
