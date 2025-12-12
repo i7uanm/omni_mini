@@ -24,13 +24,19 @@ mini-omni/
 ├── inference.py
 ├── omni_engine.py
 ├── test_omni_engine.py
+├── server.py
+├── realtime_vad_player.py
+├── stream_test.py
+├── demo_snac_token_decode.py
 ├── webui/
+│   ├── omni_gradio.py
+│   └── omni_streamlit.py
 ├── utils/
 ├── data/
 └── checkpoint/ (首次运行会自动下载)
 ```
 
-其中 omni_engine.py 为自定义推理引擎核心文件。
+其中 omni_engine.py 为自定义推理引擎核心文件。server.py 提供 Flask API 服务。webui/ 包含 Gradio 和 Streamlit 界面。realtime_vad_player.py 实现实时语音交互。
 
 ---
 
@@ -51,21 +57,67 @@ OmniEngine 对官方 OmniInference 进行包装，提供一个更清晰的接口
 
 ---
 
-## 四、OmniEngine 源码
+## 四、API 服务
 
-文件路径: omni_engine.py
+文件: server.py
 
-```python
-from omni_engine import OmniEngine
-import wave
-import numpy as np
+提供 Flask API 服务，支持流式音频输出。
+
+运行方式:
+
+```sh
+python server.py
 ```
 
-源码位置参考仓库文件 omni_engine.py。
+API 端点:
+
+- POST /chat: 接受音频数据，返回流式音频响应。
 
 ---
 
-## 五、最小运行样例
+## 五、Web 界面
+
+### Gradio 界面
+
+文件: webui/omni_gradio.py
+
+运行方式:
+
+```sh
+python webui/omni_gradio.py
+```
+
+支持上传音频文件并生成响应。
+
+### Streamlit 界面
+
+文件: webui/omni_streamlit.py
+
+运行方式:
+
+```sh
+streamlit run webui/omni_streamlit.py
+```
+
+支持实时语音录制和播放。
+
+---
+
+## 六、实时语音交互
+
+文件: realtime_vad_player.py
+
+运行方式:
+
+```sh
+python realtime_vad_player.py
+```
+
+使用麦克风实时输入语音，自动检测语音活动并生成响应。
+
+---
+
+## 七、最小运行样例
 
 文件: test_omni_engine.py
 
@@ -85,7 +137,21 @@ python test_omni_engine.py
 
 ---
 
-## 六、开发任务与里程碑
+## 八、文本到音频演示
+
+文件: demo_snac_token_decode.py
+
+运行方式:
+
+```sh
+python demo_snac_token_decode.py
+```
+
+演示从文本生成音频的功能，使用 SNAC 解码器输出 wav 文件。
+
+---
+
+## 九、开发任务与里程碑
 
 以下为当前项目的阶段任务规划。
 
@@ -112,19 +178,38 @@ python test_omni_engine.py
 
 当前进度: 第一阶段已完成 OmniEngine 的实现，并验证推理功能正常工作。
 
+### 2. 第二阶段目标（截至 12 月 12 日）
+
+目标实现流式音频输出、API 服务和 Web 界面。
+
+具体任务包括：
+
+- **构建统一的 API 服务层**  
+  已完成: server.py 提供 Flask API，支持流式音频输出。
+
+- **对接前端 WebSocket 实现流式音频输出**  
+  已完成: webui/omni_gradio.py 和 omni_streamlit.py 实现 Gradio 和 Streamlit 界面，支持实时交互。
+
+- **实现实时语音交互**  
+  已完成: realtime_vad_player.py 支持麦克风输入和实时播放响应。
+
+- **添加演示脚本**  
+  已完成: demo_snac_token_decode.py 演示文本到音频生成。
+
+当前进度: 第二阶段已完成，项目支持多种交互方式，包括命令行、Web UI 和实时语音。
+
 ---
 
-## 七、后续工作计划
+## 十、后续工作计划
 
 1. 扩展 generate_multimodal 接口，加入图像特征
-2. 对接前端 WebSocket 实现流式音频输出
-3. 完善错误处理、异常输出与日志
-4. 构建统一的 API 服务层
-5. 完整撰写阶段报告文档
+2. 完善错误处理、异常输出与日志
+3. 完整撰写阶段报告文档
+4. 添加更多演示和测试用例
 
 ---
 
-## 八、环境安装
+## 十一、环境安装
 
 ```sh
 conda create -n omni python=3.10
@@ -136,6 +221,6 @@ pip install -r requirements.txt
 
 ---
 
-## 九、免责声明
+## 十二、免责声明
 
 本项目为个人学习与研究目的构建，与官方项目无直接关联。严禁将本仓库用于任何商业用途或违反相关法律法规的场景。
